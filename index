@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Floorplan Designer</title>
+<style>
+  :root{
+    --paper:#FBFAF6;
+    --ink:#2B2B2E;
+    --ink-soft:#6b6b70;
+    --line:#d8d5cc;
+    --grid-minor:#eae7dd;
+    --grid-major:#cdc8bd;
+    --accent:#3B5BA5;
+    --accent-soft:#e7edf7;
+    --panel:#ffffff;
+    --danger:#a03a3a;
+    --radius:6px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--paper);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;}
+  .mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",Menlo,monospace;}
+  #app{display:flex;flex-direction:column;height:100vh;}
+
+  /* ---------- Top bar ---------- */
+  #topbar{display:flex;align-items:center;gap:18px;padding:10px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap;z-index:20;}
+  #topbar h1{font-size:15px;font-weight:600;margin:0;letter-spacing:.2px;white-space:nowrap;}
+  .field-group{display:flex;align-items:center;gap:6px;}
+  .field-group label{font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;}
+  .dimin{width:44px;padding:5px 5px;border:1px solid var(--line);border-radius:4px;
+    font-size:13px;text-align:center;background:#fff;color:var(--ink);}
+  .dimin:focus{outline:2px solid var(--accent-soft);border-color:var(--accent);}
+  .sep{width:1px;height:24px;background:var(--line);}
+  select, .btn{
+    font-size:12.5px;padding:6px 10px;border-radius:4px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);cursor:pointer;}
+  .btn:hover{background:var(--accent-soft);border-color:var(--accent);}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .btn.primary:hover{background:#000;}
+  .btn.small{padding:4px 8px;font-size:11.5px;}
+  .btn.danger:hover{background:#f8e9e9;border-color:var(--danger);color:var(--danger);}
+  #topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  input[type=range]{width:90px;}
+
+  /* ---------- Body layout ---------- */
+  #body{flex:1;display:flex;min-height:0;}
+
+  /* ---------- Palette ---------- */
+  #palette{width:212px;flex-shrink:0;background:var(--panel);border-right:1px solid var(--line);
+    overflow-y:auto;padding:14px 12px 40px;}
+  .palette-section h2{font-size:11px;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--ink-soft);margin:18px 0 8px;font-weight:600;}
+  .palette-section:first-child h2{margin-top:0;}
+  .chip{display:flex;align-items:center;gap:8px;padding:7px 9px;margin-bottom:6px;
+    border:1px solid var(--line);border-radius:5px;background:#fff;cursor:grab;
+    font-size:12.5px;user-select:none;transition:box-shadow .1s, border-color .1s;}
+  .chip:hover{border-color:var(--accent);box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .chip:active{cursor:grabbing;}
+  .chip .swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0;border:1px solid rgba(0,0,0,.15);}
+  .chip .glyph{width:20px;height:14px;flex-shrink:0;display:flex;align-items:center;justify-content:center;}
+  .hint{font-size:11px;color:var(--ink-soft);line-height:1.5;margin-top:14px;padding-top:12px;
+    border-top:1px solid var(--line);}
+
+  /* ---------- Canvas area ---------- */
+  #canvas-wrap{flex:1;overflow:auto;position:relative;background:#f1efe7;
+    display:flex;align-items:flex-start;justify-content:flex-start;padding:48px;}
+  #ruler-corner{position:sticky;top:0;left:0;}
+  #stage{position:relative;flex-shrink:0;}
+  #rulerTop{position:absolute;top:-22px;left:0;height:20px;pointer-events:none;}
+  #rulerLeft{position:absolute;left:-26px;top:0;width:24px;pointer-events:none;}
+  .tick-label{position:absolute;font-size:9px;color:var(--ink-soft);white-space:nowrap;}
+  #canvas{position:relative;background:var(--paper);border:1.5px solid var(--ink);
+    box-shadow:0 2px 10px rgba(0,0,0,.08);}
+  .grid-line{position:absolute;background:var(--grid-minor);}
+  .grid-line.major{background:var(--grid-major);}
+
+  /* ---------- Elements ---------- */
+  .el{position:absolute;cursor:move;}
+  .el .box{width:100%;height:100%;position:relative;}
+  .el.selected .box{outline:2px solid var(--accent);outline-offset:1px;}
+  .el .label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;pointer-events:none;line-height:1.25;
+    padding:2px;overflow:hidden;}
+  .el .label .name{font-weight:600;}
+  .el .label .dims{color:var(--ink-soft);}
+
+  .room .box{background:var(--room-fill,#eee);border:1.5px solid var(--room-border,#999);}
+  .wall .box{background:repeating-linear-gradient(135deg,#4a4a4d,#4a4a4d 3px,#3a3a3d 3px,#3a3a3d 6px);
+    border:1px solid #2a2a2c;}
+  .stairs .box{background:#fff;border:1.5px solid var(--ink);}
+  .door .box, .window .box{background:transparent;border:none;}
+  .dormer .box{background:transparent;border:none;}
+
+  .handle{position:absolute;width:9px;height:9px;background:#fff;border:1.5px solid var(--accent);
+    border-radius:2px;z-index:5;}
+  .handle.nw{top:-5px;left:-5px;cursor:nwse-resize;}
+  .handle.ne{top:-5px;right:-5px;cursor:nesw-resize;}
+  .handle.sw{bottom:-5px;left:-5px;cursor:nesw-resize;}
+  .handle.se{bottom:-5px;right:-5px;cursor:nwse-resize;}
+  .handle.n{top:-5px;left:calc(50% - 4.5px);cursor:ns-resize;}
+  .handle.s{bottom:-5px;left:calc(50% - 4.5px);cursor:ns-resize;}
+  .handle.w{left:-5px;top:calc(50% - 4.5px);cursor:ew-resize;}
+  .handle.e{right:-5px;top:calc(50% - 4.5px);cursor:ew-resize;}
+
+  /* ---------- Properties panel ---------- */
+  #props{width:250px;flex-shrink:0;background:var(--panel);border-left:1px solid var(--line);
+    overflow-y:auto;padding:16px 14px 40px;}
+  #props h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);
+    margin:0 0 12px;font-weight:600;}
+  .prop-row{margin-bottom:12px;}
+  .prop-row label{display:block;font-size:11px;color:var(--ink-soft);margin-bottom:4px;}
+  .prop-row input[type=text], .prop-row select{
+    width:100%;padding:6px 7px;border:1px solid var(--line);border-radius:4px;font-size:13px;
+    background:#fff;color:var(--ink);}
+  .dim-pair{display:flex;gap:6px;align-items:center;}
+  .dim-pair .dimin{width:52px;}
+  .dim-pair span{font-size:12px;color:var(--ink-soft);}
+  .prop-actions{display:flex;gap:6px;margin-top:16px;flex-wrap:wrap;}
+  .empty-note{font-size:12.5px;color:var(--ink-soft);line-height:1.6;}
+  .swatch-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+  .swatch-btn{width:20px;height:20px;border-radius:4px;border:1.5px solid rgba(0,0,0,.15);cursor:pointer;}
+  .swatch-btn.active{outline:2px solid var(--accent);outline-offset:1px;}
+  .area-note{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#d3cfc3;border-radius:5px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  @media print{
+    #topbar, #palette, #props{display:none !important;}
+    #canvas-wrap{padding:0;overflow:visible;background:#fff;}
+    #body{display:block;}
+    .handle{display:none !important;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="topbar">
+    <h1>Floorplan Designer</h1>
+    <div class="sep"></div>
+    <div class="field-group">
+      <label>Floor width</label>
+      <input type="number" min="1" class="dimin" id="floorWFt" value="30"> <span class="mono" style="font-size:12px;">ft</span>
+      <input type="number" min="0" max="11" class="dimin" id="floorWIn" value="0"> <span class="mono" style="font-size:12px;">in</span>
+    </div>
+    <div class="field-group">
+      <label>Floor height</label>
+      <input type="number" min="1" class="dimin" id="floorHFt" value="24"> <span class="mono" style="font-size:12px;">ft</span>
+      <input type="number" min="0" max="11" class="dimin" id="floorHIn" value="0"> <span class="mono" style="font-size:12px;">in</span>
+    </div>
+    <button class="btn small" id="applyFloor">Apply size</button>
+    <div class="sep"></div>
+    <div class="field-group">
+      <label>Snap</label>
+      <select id="snapSel">
+        <option value="0">Off</option>
+        <option value="1">1 in</option>
+        <option value="3">3 in</option>
+        <option value="6" selected>6 in</option>
+        <option value="12">1 ft</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label>Zoom</label>
+      <input type="range" id="zoomRange" min="8" max="36" value="18">
+    </div>
+    <div id="topbar-right">
+      <button class="btn small" id="btnExport">Export file</button>
+      <button class="btn small" id="btnImport">Import file</button>
+      <input type="file" id="fileInput" accept="application/json" style="display:none;">
+      <button class="btn small" id="btnPrint">Print / PDF</button>
+      <button class="btn small danger" id="btnClear">Clear all</button>
+    </div>
+  </div>
+
+  <div id="body">
+    <div id="palette">
+      <div class="palette-section">
+        <h2>Rooms</h2>
+        <div id="roomChips"></div>
+      </div>
+      <div class="palette-section">
+        <h2>Fixtures &amp; symbols</h2>
+        <div id="fixtureChips"></div>
+      </div>
+      <div class="hint">Drag an item onto the plan. Click a placed item to move it, drag the small
+        squares to resize, or type exact dimensions on the right.</div>
+    </div>
+
+    <div id="canvas-wrap">
+      <div id="stage">
+        <div id="rulerTop"></div>
+        <div id="rulerLeft"></div>
+        <div id="canvas"></div>
+      </div>
+    </div>
+
+    <div id="props"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ============================= constants ============================= */
+
+var ROOM_TYPES = [
+  {key:"bedroom",  name:"Bedroom",     fill:"#E9E1F5", border:"#8B6FB5", wFt:11, hFt:11},
+  {key:"bathroom", name:"Bathroom",    fill:"#DCEEF0", border:"#4E9AA6", wFt:7,  hFt:7},
+  {key:"kitchen",  name:"Kitchen",     fill:"#FBE9D0", border:"#C98A3B", wFt:12, hFt:11},
+  {key:"living",   name:"Living Room", fill:"#E4EEDD", border:"#6E9A54", wFt:16, hFt:13},
+  {key:"dining",   name:"Dining Room", fill:"#F7E3D9", border:"#C97B5A", wFt:12, hFt:11},
+  {key:"closet",   name:"Closet",      fill:"#ECEAE4", border:"#8C8879", wFt:4,  hFt:4},
+  {key:"hallway",  name:"Hallway",     fill:"#EEE9DD", border:"#A6987A", wFt:4,  hFt:10},
+  {key:"garage",   name:"Garage",      fill:"#DDE2E6", border:"#6D7A85", wFt:20, hFt:20},
+  {key:"office",   name:"Office",      fill:"#E2E9F2", border:"#5A7CA6", wFt:10, hFt:10},
+  {key:"laundry",  name:"Laundry",     fill:"#E6EEF0", border:"#5C8B94", wFt:6,  hFt:6},
+  {key:"other",    name:"Other room",  fill:"#EEEEEE", border:"#999999", wFt:10, hFt:10}
+];
+
+var MIN_IN = 6;
+
+var state = {
+  floorWIn: 30*12,
+  floorHIn: 24*12,
+  pxPerFt: 18,
+  snapIn: 6,
+  selectedId: null,
+  nextId: 1,
+  elements: []
+};
+
+/* ============================= helpers ============================= */
+
+function pxPerIn(){ return state.pxPerFt/12; }
+function inToPx(v){ return v*pxPerIn(); }
+function pxToIn(v){ return v/pxPerIn(); }
+function snap(v){
+  var s = state.snapIn;
+  if(!s) return Math.round(v*100)/100;
+  return Math.round(v/s)*s;
+}
+function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+function ftIn(totalIn){
+  totalIn = Math.max(0, Math.round(totalIn));
+  var ft = Math.floor(totalIn/12);
+  var inch = totalIn - ft*12;
+  return {ft:ft, inch:inch};
+}
+function fmtFtIn(totalIn){
+  var r = ftIn(totalIn);
+  return r.ft + "'" + r.inch + '"';
+}
+function uid(){ return "el" + (state.nextId++); }
+
+function defaultLabelFor(type, subtype){
+  if(type==="room"){
+    var t = ROOM_TYPES.find(function(r){return r.key===subtype;});
+    return t ? t.name : "Room";
+  }
+  if(type==="wall") return "";
+  if(type==="door") return "Door";
+  if(type==="window") return "Window";
+  if(type==="stairs") return "Stairs";
+  if(type==="dormer") return "Dormer";
+  return "";
+}
+
+/* ============================= element factory ============================= */
+
+function makeElement(type, subtype, cxIn, cyIn){
+  var wIn, hIn, extra = {};
+  if(type==="room"){
+    var t = ROOM_TYPES.find(function(r){return r.key===subtype;}) || ROOM_TYPES[ROOM_TYPES.length-1];
+    wIn = t.wFt*12; hIn = t.hFt*12;
+    extra.fill = t.fill; extra.border = t.border;
+  } else if(type==="wall"){
+    wIn = 96; hIn = 6;
+  } else if(type==="door"){
+    wIn = 36; hIn = 20;
+  } else if(type==="window"){
+    wIn = 36; hIn = 6;
+  } else if(type==="stairs"){
+    wIn = 132; hIn = 36;
+  } else if(type==="dormer"){
+    wIn = 30; hIn = 24;
+  }
+  var el = {
+    id: uid(),
+    type: type,
+    subtype: subtype || null,
+    label: defaultLabelFor(type, subtype),
+    xIn: snap(clamp(cxIn - wIn/2, 0, Math.max(0,state.floorWIn-wIn))),
+    yIn: snap(clamp(cyIn - hIn/2, 0, Math.max(0,state.floorHIn-hIn))),
+    wIn: wIn,
+    hIn: hIn,
+    rot: 0
+  };
+  Object.assign(el, extra);
+  return el;
+}
+
+/* ============================= SVG symbol generators ============================= */
+
+function svgWrap(w,h,inner){
+  return '<svg viewBox="0 0 '+w+' '+h+'" width="100%" height="100%" preserveAspectRatio="none" style="display:block;overflow:visible;">'+inner+'</svg>';
+}
+
+function doorSVG(w,h){
+  var hinge = [0,h], jamb=[w,h], tip=[0,0];
+  var path = 'M'+hinge[0]+','+hinge[1]+' L'+tip[0]+','+tip[1]+
+    ' M'+tip[0]+','+tip[1]+' A '+w+' '+h+' 0 0 1 '+jamb[0]+','+jamb[1];
+  return svgWrap(w,h,
+    '<line x1="0" y1="'+h+'" x2="'+w+'" y2="'+h+'" stroke="#b7b2a4" stroke-width="1.5" stroke-dasharray="4 3"/>'+
+    '<path d="'+path+'" fill="none" stroke="'+"#2B2B2E"+'" stroke-width="1.5"/>'
+  );
+}
+function windowSVG(w,h){
+  return svgWrap(w,h,
+    '<rect x="0.75" y="0.75" width="'+(w-1.5)+'" height="'+(h-1.5)+'" fill="#fff" stroke="#2B2B2E" stroke-width="1.5"/>'+
+    '<line x1="0" y1="'+(h/2)+'" x2="'+w+'" y2="'+(h/2)+'" stroke="#2B2B2E" stroke-width="1.2"/>'
+  );
+}
+function stairsSVG(w,h){
+  var n = Math.max(4, Math.round(w/11));
+  var lines = "";
+  for(var i=1;i<n;i++){
+    var x = (w/n)*i;
+    lines += '<line x1="'+x+'" y1="0" x2="'+x+'" y2="'+h+'" stroke="#2B2B2E" stroke-width="1"/>';
+  }
+  var midY = h/2;
+  lines += '<line x1="'+(w*0.08)+'" y1="'+(h*0.8)+'" x2="'+(w*0.92)+'" y2="'+(h*0.2)+'" stroke="#2B2B2E" stroke-width="1.4"/>';
+  lines += '<polygon points="'+(w*0.92)+','+(h*0.2)+' '+(w*0.92-9)+','+(h*0.2+2)+' '+(w*0.92-2)+','+(h*0.2+9)+'" fill="#2B2B2E"/>';
+  return svgWrap(w,h,
+    '<rect x="0.75" y="0.75" width="'+(w-1.5)+'" height="'+(h-1.5)+'" fill="#fff" stroke="#2B2B2E" stroke-width="1.5"/>'+lines
+  );
+}
+function dormerSVG(w,h){
+  return svgWrap(w,h,
+    '<polygon points="0,'+h+' '+(w/2)+',0 '+w+','+h+'" fill="#f3e9d7" stroke="#8a6a3a" stroke-width="1.5"/>'
+  );
+}
+
+/* ============================= rendering ============================= */
+
+var canvasEl = document.getElementById("canvas");
+var rulerTop = document.getElementById("rulerTop");
+var rulerLeft = document.getElementById("rulerLeft");
+var propsEl = document.getElementById("props");
+
+function renderCanvasSize(){
+  var w = inToPx(state.floorWIn), h = inToPx(state.floorHIn);
+  canvasEl.style.width = w+"px";
+  canvasEl.style.height = h+"px";
+  document.getElementById("stage").style.width = w+"px";
+  document.getElementById("stage").style.height = h+"px";
+  rulerTop.style.width = w+"px";
+  rulerLeft.style.height = h+"px";
+}
+
+function renderGridAndRulers(){
+  var pxFt = state.pxPerFt;
+  var wFt = state.floorWIn/12, hFt = state.floorHIn/12;
+  var grid = "";
+  for(var x=0; x<=wFt+0.001; x++){
+    var major = (x % 5 === 0);
+    grid += '<div class="grid-line'+(major?' major':'')+'" style="left:'+(x*pxFt)+'px;top:0;width:1px;height:100%;"></div>';
+  }
+  for(var y=0; y<=hFt+0.001; y++){
+    var majorY = (y % 5 === 0);
+    grid += '<div class="grid-line'+(majorY?' major':'')+'" style="top:'+(y*pxFt)+'px;left:0;height:1px;width:100%;"></div>';
+  }
+  var gridHost = canvasEl.querySelector(".grid-host");
+  if(!gridHost){
+    gridHost = document.createElement("div");
+    gridHost.className = "grid-host";
+    gridHost.style.position="absolute"; gridHost.style.inset="0"; gridHost.style.pointerEvents="none";
+    canvasEl.insertBefore(gridHost, canvasEl.firstChild);
+  }
+  gridHost.innerHTML = grid;
+
+  var rt = "", rl = "";
+  for(var xf=0; xf<=wFt+0.001; xf+=5){
+    rt += '<div class="tick-label" style="left:'+(xf*pxFt)+'px;top:2px;">'+xf+"'</div>";
+  }
+  for(var yf=0; yf<=hFt+0.001; yf+=5){
+    rl += '<div class="tick-label" style="top:'+(yf*pxFt-6)+'px;left:0;">'+yf+"'</div>";
+  }
+  rulerTop.innerHTML = rt;
+  rulerLeft.innerHTML = rl;
+}
+
+function elInnerHTML(el){
+  var wPx = inToPx(el.wIn), hPx = inToPx(el.hIn);
+  if(el.type==="room"){
+    var area = Math.round((el.wIn/12)*(el.hIn/12));
+    return '<div class="label"><span class="name">'+escapeHtml(el.label)+'</span>'+
+      '<span class="dims mono">'+fmtFtIn(el.wIn)+' x '+fmtFtIn(el.hIn)+'</span>'+
+      '<span class="dims mono">'+area+' sq ft</span></div>';
+  }
+  if(el.type==="wall"){ return ""; }
+  if(el.type==="door"){ return doorSVG(wPx,hPx); }
+  if(el.type==="window"){ return windowSVG(wPx,hPx); }
+  if(el.type==="stairs"){
+    return stairsSVG(wPx,hPx)+'<div class="label" style="justify-content:flex-end;padding-bottom:2px;"><span class="dims mono" style="background:rgba(255,255,255,.75);padding:0 3px;">'+escapeHtml(el.label||"Stairs")+'</span></div>';
+  }
+  if(el.type==="dormer"){
+    return dormerSVG(wPx,hPx)+'<div class="label" style="justify-content:flex-end;"><span class="dims mono" style="font-size:9.5px;">'+escapeHtml(el.label||"Dormer")+'</span></div>';
+  }
+  return "";
+}
+
+function escapeHtml(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, function(c){
+    return ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[c];
+  });
+}
+
+var HANDLE_DIRS = ["nw","n","ne","e","se","s","sw","w"];
+
+function renderElements(){
+  var existing = {};
+  canvasEl.querySelectorAll(".el").forEach(function(n){ existing[n.dataset.id]=n; });
+  var keepIds = {};
+
+  state.elements.forEach(function(el){
+    keepIds[el.id]=true;
+    var node = existing[el.id];
+    if(!node){
+      node = document.createElement("div");
+      node.className = "el";
+      node.dataset.id = el.id;
+      canvasEl.appendChild(node);
+    }
+    node.className = "el "+el.type+(state.selectedId===el.id?" selected":"");
+    node.style.left = inToPx(el.xIn)+"px";
+    node.style.top = inToPx(el.yIn)+"px";
+    node.style.width = inToPx(el.wIn)+"px";
+    node.style.height = inToPx(el.hIn)+"px";
+    node.style.zIndex = el.type==="room" ? 1 : el.type==="wall" ? 2 : 3;
+    node.style.transform = el.rot ? "rotate("+el.rot+"deg)" : "";
+    if(el.type==="room"){
+      node.style.setProperty("--room-fill", el.fill);
+      node.style.setProperty("--room-border", el.border);
+    }
+    var boxHTML = '<div class="box">'+elInnerHTML(el)+'</div>';
+    if(state.selectedId===el.id){
+      HANDLE_DIRS.forEach(function(d){ boxHTML += '<div class="handle '+d+'" data-dir="'+d+'"></div>'; });
+    }
+    node.innerHTML = boxHTML;
+  });
+
+  Object.keys(existing).forEach(function(id){
+    if(!keepIds[id]) existing[id].remove();
+  });
+}
+
+function renderProps(){
+  var el = state.elements.find(function(e){return e.id===state.selectedId;});
+  if(!el){
+    propsEl.innerHTML = '<h2>Plan info</h2><p class="empty-note">Click any placed item to edit its exact size, position and label here.<br><br>'+
+      'Overall plan: <b class="mono">'+fmtFtIn(state.floorWIn)+' x '+fmtFtIn(state.floorHIn)+'</b><br>'+
+      'Total footprint: <b class="mono">'+Math.round((state.floorWIn/12)*(state.floorHIn/12))+' sq ft</b><br>'+
+      'Items placed: <b class="mono">'+state.elements.length+'</b></p>';
+    return;
+  }
+  var wR = ftIn(el.wIn), hR = ftIn(el.hIn), xR = ftIn(el.xIn), yR = ftIn(el.yIn);
+  var lenLabel = (el.type==="room") ? "Width" : (el.type==="stairs") ? "Run length" : "Length";
+  var depLabel = (el.type==="room") ? "Depth" : (el.type==="wall") ? "Thickness" : (el.type==="stairs") ? "Width" : "Thickness";
+
+  var html = '<h2>Edit item</h2>';
+  html += '<div class="prop-row"><label>Label</label><input type="text" id="pLabel" value="'+escapeHtml(el.label)+'"></div>';
+
+  if(el.type==="room"){
+    html += '<div class="prop-row"><label>Room type</label><select id="pSubtype">';
+    ROOM_TYPES.forEach(function(t){
+      html += '<option value="'+t.key+'"'+(t.key===el.subtype?" selected":"")+'>'+t.name+'</option>';
+    });
+    html += '</select></div>';
+    html += '<div class="prop-row"><label>Color</label><div class="swatch-row">';
+    ROOM_TYPES.forEach(function(t){
+      html += '<div class="swatch-btn'+(t.fill===el.fill?" active":"")+'" data-fill="'+t.fill+'" data-border="'+t.border+'" style="background:'+t.fill+';border-color:'+t.border+'" title="'+t.name+'"></div>';
+    });
+    html += '</div></div>';
+  }
+
+  html += '<div class="prop-row"><label>'+lenLabel+'</label><div class="dim-pair">'+
+    '<input type="number" min="0" class="dimin" id="pWFt" value="'+wR.ft+'"><span>ft</span>'+
+    '<input type="number" min="0" max="11" class="dimin" id="pWIn" value="'+wR.inch+'"><span>in</span></div></div>';
+
+  html += '<div class="prop-row"><label>'+depLabel+'</label><div class="dim-pair">'+
+    '<input type="number" min="0" class="dimin" id="pHFt" value="'+hR.ft+'"><span>ft</span>'+
+    '<input type="number" min="0" max="11" class="dimin" id="pHIn" value="'+hR.inch+'"><span>in</span></div></div>';
+
+  if(el.type==="room"){
+    html += '<div class="area-note mono">Area: '+Math.round((el.wIn/12)*(el.hIn/12))+' sq ft</div>';
+  }
+
+  html += '<div class="prop-row"><label>Position from left</label><div class="dim-pair">'+
+    '<input type="number" min="0" class="dimin" id="pXFt" value="'+xR.ft+'"><span>ft</span>'+
+    '<input type="number" min="0" max="11" class="dimin" id="pXIn" value="'+xR.inch+'"><span>in</span></div></div>';
+
+  html += '<div class="prop-row"><label>Position from top</label><div class="dim-pair">'+
+    '<input type="number" min="0" class="dimin" id="pYFt" value="'+yR.ft+'"><span>ft</span>'+
+    '<input type="number" min="0" max="11" class="dimin" id="pYIn" value="'+yR.inch+'"><span>in</span></div></div>';
+
+  html += '<div class="prop-actions">'+
+    '<button class="btn small" id="pRotate">Rotate 90&deg;</button>'+
+    '<button class="btn small" id="pDuplicate">Duplicate</button>'+
+    '<button class="btn small danger" id="pDelete">Delete</button>'+
+    '</div>';
+
+  propsEl.innerHTML = html;
+  wireProps(el);
+}
+
+function render(){
+  renderCanvasSize();
+  renderGridAndRulers();
+  renderElements();
+  renderProps();
+}
+
+/* ============================= props panel wiring ============================= */
+
+function wireProps(el){
+  function commitDims(){
+    var wFt = parseInt(document.getElementById("pWFt").value,10)||0;
+    var wIn = parseInt(document.getElementById("pWIn").value,10)||0;
+    var hFt = parseInt(document.getElementById("pHFt").value,10)||0;
+    var hIn = parseInt(document.getElementById("pHIn").value,10)||0;
+    el.wIn = Math.max(MIN_IN, wFt*12+wIn);
+    el.hIn = Math.max(MIN_IN, hFt*12+hIn);
+    render();
+  }
+  function commitPos(){
+    var xFt = parseInt(document.getElementById("pXFt").value,10)||0;
+    var xIn = parseInt(document.getElementById("pXIn").value,10)||0;
+    var yFt = parseInt(document.getElementById("pYFt").value,10)||0;
+    var yIn = parseInt(document.getElementById("pYIn").value,10)||0;
+    el.xIn = Math.max(0, xFt*12+xIn);
+    el.yIn = Math.max(0, yFt*12+yIn);
+    render();
+  }
+  document.getElementById("pLabel").addEventListener("change", function(e){ el.label = e.target.value; render(); });
+  ["pWFt","pWIn","pHFt","pHIn"].forEach(function(id){
+    document.getElementById(id).addEventListener("change", commitDims);
+  });
+  ["pXFt","pXIn","pYFt","pYIn"].forEach(function(id){
+    document.getElementById(id).addEventListener("change", commitPos);
+  });
+  var sub = document.getElementById("pSubtype");
+  if(sub){
+    sub.addEventListener("change", function(e){
+      var t = ROOM_TYPES.find(function(r){return r.key===e.target.value;});
+      el.subtype = t.key; el.fill = t.fill; el.border = t.border;
+      if(!el.labelEdited) el.label = t.name;
+      render();
+    });
+  }
+  propsEl.querySelectorAll(".swatch-btn").forEach(function(btn){
+    btn.addEventListener("click", function(){
+      el.fill = btn.dataset.fill; el.border = btn.dataset.border; render();
+    });
+  });
+  document.getElementById("pRotate").addEventListener("click", function(){
+    el.rot = (el.rot + 90) % 360; render();
+  });
+  document.getElementById("pDuplicate").addEventListener("click", function(){
+    var copy = JSON.parse(JSON.stringify(el));
+    copy.id = uid();
+    copy.xIn = clamp(copy.xIn + 12, 0, Math.max(0,state.floorWIn-copy.wIn));
+    copy.yIn = clamp(copy.yIn + 12, 0, Math.max(0,state.floorHIn-copy.hIn));
+    state.elements.push(copy);
+    state.selectedId = copy.id;
+    render();
+  });
+  document.getElementById("pDelete").addEventListener("click", function(){
+    state.elements = state.elements.filter(function(e){return e.id!==el.id;});
+    state.selectedId = null;
+    render();
+  });
+}
+
+/* ============================= palette build ============================= */
+
+function fixtureGlyph(type){
+  if(type==="wall") return '<div class="glyph"><div style="width:18px;height:6px;background:#3a3a3d;"></div></div>';
+  if(type==="door") return '<div class="glyph">'+svgWrap(20,14,'<path d="M0,14 L0,0 M0,0 A20 14 0 0 1 20,14" fill="none" stroke="#2B2B2E" stroke-width="1.5"/><line x1="0" y1="14" x2="20" y2="14" stroke="#b7b2a4" stroke-dasharray="3 2"/>')+'</div>';
+  if(type==="window") return '<div class="glyph">'+svgWrap(20,10,'<rect x="0.5" y="0.5" width="19" height="9" fill="#fff" stroke="#2B2B2E"/><line x1="0" y1="5" x2="20" y2="5" stroke="#2B2B2E"/>')+'</div>';
+  if(type==="stairs") return '<div class="glyph">'+svgWrap(20,14,'<rect x="0.5" y="0.5" width="19" height="13" fill="#fff" stroke="#2B2B2E"/><line x1="5" y1="0" x2="5" y2="14" stroke="#2B2B2E"/><line x1="10" y1="0" x2="10" y2="14" stroke="#2B2B2E"/><line x1="15" y1="0" x2="15" y2="14" stroke="#2B2B2E"/>')+'</div>';
+  if(type==="dormer") return '<div class="glyph">'+svgWrap(20,14,'<polygon points="0,14 10,0 20,14" fill="#f3e9d7" stroke="#8a6a3a"/>')+'</div>';
+  return '<div class="glyph"></div>';
+}
+
+function buildPalette(){
+  var roomHost = document.getElementById("roomChips");
+  ROOM_TYPES.forEach(function(t){
+    var chip = document.createElement("div");
+    chip.className = "chip";
+    chip.draggable = true;
+    chip.dataset.kind = "room";
+    chip.dataset.subtype = t.key;
+    chip.innerHTML = '<span class="swatch" style="background:'+t.fill+';border-color:'+t.border+'"></span><span>'+t.name+'</span>';
+    roomHost.appendChild(chip);
+  });
+
+  var fixtures = [["wall","Wall"],["door","Door"],["window","Window"],["stairs","Stairs"],["dormer","Dormer marker"]];
+  var fixHost = document.getElementById("fixtureChips");
+  fixtures.forEach(function(f){
+    var chip = document.createElement("div");
+    chip.className = "chip";
+    chip.draggable = true;
+    chip.dataset.kind = f[0];
+    chip.innerHTML = fixtureGlyph(f[0])+'<span>'+f[1]+'</span>';
+    fixHost.appendChild(chip);
+  });
+
+  document.querySelectorAll(".chip").forEach(function(chip){
+    chip.addEventListener("dragstart", function(e){
+      e.dataTransfer.setData("text/plain", JSON.stringify({kind:chip.dataset.kind, subtype:chip.dataset.subtype||null}));
+      e.dataTransfer.effectAllowed = "copy";
+    });
+  });
+}
+
+canvasEl.addEventListener("dragover", function(e){ e.preventDefault(); e.dataTransfer.dropEffect="copy"; });
+canvasEl.addEventListener("drop", function(e){
+  e.preventDefault();
+  var raw = e.dataTransfer.getData("text/plain");
+  if(!raw) return;
+  var data = JSON.parse(raw);
+  var rect = canvasEl.getBoundingClientRect();
+  var cxPx = e.clientX - rect.left, cyPx = e.clientY - rect.top;
+  var cxIn = pxToIn(cxPx), cyIn = pxToIn(cyPx);
+  var el = makeElement(data.kind, data.subtype, cxIn, cyIn);
+  state.elements.push(el);
+  state.selectedId = el.id;
+  render();
+});
+
+/* ============================= move & resize ============================= */
+
+var drag = null;
+
+canvasEl.addEventListener("mousedown", function(e){
+  var handle = e.target.closest(".handle");
+  var elNode = e.target.closest(".el");
+  if(handle && elNode){
+    var el = state.elements.find(function(x){return x.id===elNode.dataset.id;});
+    drag = {mode:"resize", id:el.id, dir:handle.dataset.dir,
+      startX:e.clientX, startY:e.clientY,
+      x0:el.xIn, y0:el.yIn, w0:el.wIn, h0:el.hIn};
+    e.preventDefault();
+    return;
+  }
+  if(elNode){
+    var el2 = state.elements.find(function(x){return x.id===elNode.dataset.id;});
+    state.selectedId = el2.id;
+    drag = {mode:"move", id:el2.id, startX:e.clientX, startY:e.clientY, x0:el2.xIn, y0:el2.yIn};
+    render();
+    e.preventDefault();
+    return;
+  }
+  state.selectedId = null;
+  render();
+});
+
+document.addEventListener("mousemove", function(e){
+  if(!drag) return;
+  var el = state.elements.find(function(x){return x.id===drag.id;});
+  if(!el) return;
+  var dxIn = pxToIn(e.clientX - drag.startX);
+  var dyIn = pxToIn(e.clientY - drag.startY);
+
+  if(drag.mode==="move"){
+    el.xIn = snap(clamp(drag.x0+dxIn, 0, Math.max(0,state.floorWIn-el.wIn)));
+    el.yIn = snap(clamp(drag.y0+dyIn, 0, Math.max(0,state.floorHIn-el.hIn)));
+  } else if(drag.mode==="resize"){
+    var x=drag.x0, y=drag.y0, w=drag.w0, h=drag.h0;
+    var dir = drag.dir;
+    if(dir.indexOf("e")>=0) w = Math.max(MIN_IN, drag.w0+dxIn);
+    if(dir.indexOf("s")>=0) h = Math.max(MIN_IN, drag.h0+dyIn);
+    if(dir.indexOf("w")>=0){ w = Math.max(MIN_IN, drag.w0-dxIn); x = drag.x0 + (drag.w0-w); }
+    if(dir.indexOf("n")>=0){ h = Math.max(MIN_IN, drag.h0-dyIn); y = drag.y0 + (drag.h0-h); }
+    el.xIn = snap(Math.max(0,x));
+    el.yIn = snap(Math.max(0,y));
+    el.wIn = snap(w);
+    el.hIn = snap(h);
+  }
+  render();
+});
+
+document.addEventListener("mouseup", function(){ drag = null; });
+
+/* ============================= keyboard ============================= */
+
+document.addEventListener("keydown", function(e){
+  var tag = (document.activeElement && document.activeElement.tagName) || "";
+  if(tag==="INPUT" || tag==="SELECT" || tag==="TEXTAREA") return;
+  if((e.key==="Delete" || e.key==="Backspace") && state.selectedId){
+    state.elements = state.elements.filter(function(x){return x.id!==state.selectedId;});
+    state.selectedId = null;
+    render();
+  }
+});
+
+/* ============================= top bar wiring ============================= */
+
+document.getElementById("applyFloor").addEventListener("click", function(){
+  var wFt = parseInt(document.getElementById("floorWFt").value,10)||0;
+  var wIn = parseInt(document.getElementById("floorWIn").value,10)||0;
+  var hFt = parseInt(document.getElementById("floorHFt").value,10)||0;
+  var hIn = parseInt(document.getElementById("floorHIn").value,10)||0;
+  state.floorWIn = Math.max(60, wFt*12+wIn);
+  state.floorHIn = Math.max(60, hFt*12+hIn);
+  render();
+});
+
+document.getElementById("snapSel").addEventListener("change", function(e){
+  state.snapIn = parseFloat(e.target.value);
+});
+
+document.getElementById("zoomRange").addEventListener("input", function(e){
+  state.pxPerFt = parseInt(e.target.value,10);
+  render();
+});
+
+document.getElementById("btnClear").addEventListener("click", function(){
+  if(state.elements.length && !confirm("Remove every item from the plan?")) return;
+  state.elements = [];
+  state.selectedId = null;
+  render();
+});
+
+document.getElementById("btnPrint").addEventListener("click", function(){ window.print(); });
+
+document.getElementById("btnExport").addEventListener("click", function(){
+  var data = JSON.stringify({
+    floorWIn: state.floorWIn, floorHIn: state.floorHIn,
+    pxPerFt: state.pxPerFt, elements: state.elements
+  }, null, 2);
+  var blob = new Blob([data], {type:"application/json"});
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "floorplan.json";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+});
+
+document.getElementById("btnImport").addEventListener("click", function(){
+  document.getElementById("fileInput").click();
+});
+document.getElementById("fileInput").addEventListener("change", function(e){
+  var file = e.target.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(ev){
+    try{
+      var data = JSON.parse(ev.target.result);
+      state.floorWIn = data.floorWIn || state.floorWIn;
+      state.floorHIn = data.floorHIn || state.floorHIn;
+      state.pxPerFt = data.pxPerFt || state.pxPerFt;
+      state.elements = data.elements || [];
+      state.selectedId = null;
+      document.getElementById("floorWFt").value = ftIn(state.floorWIn).ft;
+      document.getElementById("floorWIn").value = ftIn(state.floorWIn).inch;
+      document.getElementById("floorHFt").value = ftIn(state.floorHIn).ft;
+      document.getElementById("floorHIn").value = ftIn(state.floorHIn).inch;
+      document.getElementById("zoomRange").value = state.pxPerFt;
+      render();
+    }catch(err){
+      alert("Couldn't read that file. Make sure it's a floorplan JSON file exported from this tool.");
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+});
+
+/* ============================= init ============================= */
+
+buildPalette();
+render();
+
+})();
+</script>
+</body>
+</html>
